@@ -129,9 +129,9 @@ body {
     }
 
     .selectedCell:after {
-      background: #959596;
+      background: #dedeea;
       content: '';
-      left: 0;
+      left: 0;  
       right: 0;
       top: 0;
       bottom: 0;
