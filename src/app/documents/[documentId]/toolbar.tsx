@@ -3,7 +3,7 @@
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/store/use-editor-store";
 import { Separator } from "@/components/ui/separator";
-import { AlignCenterIcon, AlignJustifyIcon, AlignLeftIcon, AlignRightIcon, BoldIcon, ChevronDownIcon, HighlighterIcon, ImageIcon, ItalicIcon, Link2Icon, ListIcon, ListOrderedIcon, ListTodoIcon, LucideIcon, MessageSquarePlusIcon, PrinterIcon, Redo2Icon, RemoveFormattingIcon, SearchIcon, SpellCheckIcon, Underline, Undo2Icon, UploadIcon  } from "lucide-react";
+import { AlignCenterIcon, AlignJustifyIcon, AlignLeftIcon, AlignRightIcon, BoldIcon, ChevronDownIcon, HighlighterIcon, ImageIcon, ItalicIcon, Link2Icon, ListIcon, ListOrderedIcon, ListTodoIcon, LucideIcon, MessageSquarePlusIcon, PrinterIcon, Redo2Icon, RemoveFormattingIcon, SearchIcon, SpellCheckIcon, Strikethrough, Underline, Undo2Icon, UploadIcon  } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent,DropdownMenuItem, DropdownMenuTrigger  } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { type Level } from "@tiptap/extension-heading"
@@ -477,6 +477,12 @@ export const Toolbar = () => {
                 isActive: editor?.isActive("underline"),
                 onClick: () => editor?.chain().focus().toggleUnderline().run(),
             },
+            {
+                label: "Strike",
+                icon: Strikethrough,
+                isActive: editor?.isActive("strike"),
+                onClick: () => editor?.chain().focus().toggleStrike().run(),
+            },
         ],
         [
             {
@@ -529,3 +535,5 @@ export const Toolbar = () => {
         </div>
     );
 };
+
+

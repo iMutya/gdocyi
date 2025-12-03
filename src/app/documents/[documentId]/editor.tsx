@@ -4,7 +4,7 @@ import StarterKit from '@tiptap/starter-kit'
 import  TaskItem from '@tiptap/extension-task-item'
 import  TaskList  from '@tiptap/extension-task-list'
 import  Table from '@tiptap/extension-table'
-import  TableCell  from '@tiptap/extension-table-cell'
+import  TableCell  from '@tiptap/extension-table-cell'  
 import  TableHeader  from '@tiptap/extension-table-header'
 import  TableRow  from '@tiptap/extension-table-row'
 import Image from '@tiptap/extension-image'
@@ -85,20 +85,7 @@ export const Editor = () => {
         })
     ],
     content: `
-        <table>
-          <tbody>
-            <tr>
-              <th>Name</th>
-              <th colspan="3">Description</th>
-            </tr>
-            <tr>
-              <td>Cyndi Lauper</td>
-              <td>Singer</td>
-              <td>Songwriter</td>
-              <td>Actress</td>
-            </tr>
-          </tbody>
-        </table>
+        
       `,
     // Don't render immediately on the server to avoid SSR issues
     immediatelyRender: false,
