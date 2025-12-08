@@ -15,7 +15,15 @@ export const Ruler = () => {
                         return(
                             <div 
                             key={marker}
+                            className="absolute bottom-0"
+                            style={{left: `${position}px`}}
                             >
+                                {marker % 10 === 0 && (
+                                    <>
+                                        <div className="absolute bottom-0" />
+                                    
+                                    </>
+                                )}
 
                             </div>
                         )
