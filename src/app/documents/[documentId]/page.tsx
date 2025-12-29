@@ -24,7 +24,6 @@ const DocumentIdPage = async({params}: DocumentIdPageProps) => {
         {token}
     );
 
-
     return <Document preloadedDocument={preloadedDocument} />;
 }
  
