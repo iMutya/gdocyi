@@ -1,6 +1,5 @@
 import { Extension } from "@tiptap/react";
 import "@tiptap/extension-text-style";
-import { types } from "util";
 
 declare module "@tiptap/core"{
     interface Commands<ReturnType> {
@@ -50,7 +49,7 @@ export const FontSizeExtension = Extension.create({
             unsetFontSize: () => ({ chain }) => {
                 return chain()
                 .setMark("textStyle", {fontSize: null})
-                .removeEmptyTextStyle
+                .removeEmptyTextStyle()
                 .run()
             }
         }

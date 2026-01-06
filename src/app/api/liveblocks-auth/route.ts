@@ -26,9 +26,26 @@ export async function POST( req: Request) {
         return new Response("Unauthorized", {status:401})
     }
     
+
+    type SessionClaimsWithOrg = {
+        o?: {
+            id: string;
+        };
+    };
+
     const isOwner = document.ownerId === user.id;
+
+    let orgId: string | null = null;
+
+    if(typeof sessionClaims === "object" && sessionClaims !== null){
+        const claims = sessionClaims as SessionClaimsWithOrg;
+        orgId = claims.o?.id ?? null;
+    }
+ 
+
+
     const isOrganizationMember =
-        !!(document.organizationId && document.organizationId === sessionClaims.o.id);
+        !!(document.organizationId && document.organizationId === orgId);
     //  we dont use the org_id in sessionclaims 
     // o. - org
     // sub - user
@@ -38,10 +55,17 @@ export async function POST( req: Request) {
         return new Response("Unauthorized", {status:401})
     }
 
+    const name = user.fullName ?? user.primaryEmailAddress?.emailAddress ?? "Anonymous";
+    const nameToNumber = name.split("").reduce((acc, char) => acc + char.charCodeAt(0),0);
+    const hue = Math.abs(nameToNumber) % 360;
+    const color = `hsl(${hue}, 80%, 60%)`;
+
+
     const session = liveblocks.prepareSession(user.id,{
         userInfo: {
             name: user.fullName ?? user.primaryEmailAddress?.emailAddress ?? "Anonymous",
             avatar: user.imageUrl,
+            color,
         }
     });
     session.allow(room, session.FULL_ACCESS);

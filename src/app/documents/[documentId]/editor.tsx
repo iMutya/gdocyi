@@ -117,7 +117,7 @@ export const Editor = ({initialContent}:EditorProps) => {
         
       `,
     // Don't render immediately on the server to avoid SSR issues
-    immediatelyRender: false,
+    // immediatelyRender: false,
   })
     return(
         <div className="size-full overflow-x-auto bg-[#F9FBFD] px-4 print:p-0 print:bg-white print:overflow-visible">

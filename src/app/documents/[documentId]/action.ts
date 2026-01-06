@@ -15,9 +15,25 @@ export async function getUsers() {
     const {sessionClaims} = await auth();
     const clerk = await clerkClient();
 
+    type SessionClaimsWithOrg = {
+        o?: {
+            id: string;
+        };
+    };
+
+    const orgId =
+     typeof sessionClaims === "object" && sessionClaims !== null
+        ? (sessionClaims as SessionClaimsWithOrg).o?.id
+        : undefined;
+
+    if(!orgId){
+        return[];
+    }
+    
+
     const response = await clerk.users.getUserList({
         // organizationId:[sessionClaims?.org_id as string],
-        organizationId:[sessionClaims?.o.id as string] // if indi mag gana ang sa babaw
+        organizationId:[orgId], // if indi mag gana ang sa babaw
     });
     
 
@@ -33,6 +49,7 @@ export async function getUsers() {
             id: user.id,
             name,
             avatar: user.imageUrl,
+            color: "",
         };
     });
 
