@@ -30,38 +30,17 @@ export default defineSchema({
     expiresAt: v.number(), // Auto-expiration timestamp (24 hours)
     isActive: v.boolean(),
     lastUpdatedAt: v.number(), // Track last edit
+    organizationId: v.optional(v.string())
   })
     .index("by_document", ["documentId"])
     .index("by_owner", ["ownerId"])
     .index("by_expires", ["expiresAt"]) // For cleanup queries
     .index("by_room", ["roomId"])
     .index("by_owner_active", ["ownerId", "isActive"]) // Find user's active drafts
+    .index("by_organization", ["organizationId"]), // Optional: Add index for organization
 });
 
 
 
 
 
-
-
-
-// import { defineSchema, defineTable } from "convex/server";
-// import { v } from "convex/values";
-
-// export default defineSchema({
-//   documents: defineTable({
-//     title: v.string(),
-//     initialContent: v.optional(v.string()),
-//     ownerId: v.string(),
-//     roomId: v.optional(v.string()),
-//     organizationId: v.optional(v.string()),
-//   })
-//     .index("by_owner_id", ["ownerId"])
-//     .index("by_organization_id", ["organizationId"])
-//     .searchIndex("search_title", {
-//       searchField: "title",
-//       filterFields: ["ownerId", "organizationId"],
-//     }),
-    
-
-// });

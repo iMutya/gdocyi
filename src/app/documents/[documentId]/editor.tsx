@@ -59,6 +59,11 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
     const activeDraft = useQuery(api.drafts.getActiveDraft, {
         documentId: documentId as Id<"documents">,
     });
+
+    // Get room info to check for other user drafts
+    const roomInfo = useQuery(api.documents.getDocumentRoomInfo, {
+        id: documentId as Id<"documents">,
+    });
     
     const updateContent = useMutation(api.documents.updateContent);
     const updateDraft = useMutation(api.drafts.updateDraft);
@@ -146,6 +151,7 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
     const liveblocks = useLiveblocksExtension({
         initialContent: currentContent,
         offlineSupport_experimental: true,
+        // Remove invalid properties and use valid clientOptions
     });
 
     const { setEditor } = useEditorStore();
@@ -184,7 +190,9 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
                 style: `padding-left: ${leftMargin}px; padding-right: ${rightMargin}px`,
                 class: cn(
                     "focus:outline-none print:border-0 bg-white border border-[#C7C7C7] flex flex-col min-h-[1054px] w-[816px] pt-10 pr-14 pb-10 cursor-text",
-                    actualIsDraftMode && 'border-l-4 border-l-amber-400'
+                    actualIsDraftMode && 'border-l-4 border-l-amber-400',
+                    // Read-only styling when another user has a draft
+                    roomInfo?.hasOtherUserDraft && !actualIsDraftMode && 'bg-gray-50 cursor-not-allowed'
                 )
             },
         },
@@ -225,9 +233,17 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
             liveblocks,
         ],
         content: currentContent,
-        // Don't render immediately on the server to avoid SSR issues
-        // immediatelyRender: false,
     });
+
+    // Disable editor when another user has a draft
+    useEffect(() => {
+        if (editor && roomInfo?.hasOtherUserDraft && !actualIsDraftMode) {
+            // Disable editor when another user has a draft
+            editor.setEditable(false);
+        } else if (editor) {
+            editor.setEditable(true);
+        }
+    }, [editor, roomInfo?.hasOtherUserDraft, actualIsDraftMode]);
 
     // Update editor content when switching between draft/published mode
     useEffect(() => {
@@ -302,7 +318,7 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
 
     return (
         <div className="size-full overflow-x-auto bg-[#F9FBFD] px-4 print:p-0 print:bg-white print:overflow-visible relative">
-            {/* Draft Mode Banner */}
+            {/* Draft Mode Banner
             {showDraftBanner && actualIsDraftMode && (
                 <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
                     <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg shadow-lg">
@@ -347,6 +363,24 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
                         </div>
                     </div>
                 </div>
+            )} */}
+
+            {/* Document Locked Banner */}
+            {roomInfo?.hasOtherUserDraft && !actualIsDraftMode && (
+                <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
+                    <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg shadow-lg">
+                        <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-300">
+                                <Clock className="h-3 w-3 mr-1" />
+                                Document Locked
+                            </Badge>
+                            <div className="text-sm text-blue-800">
+                                Another user is editing this document in draft mode. 
+                                You can view but not edit until they publish their changes.
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
             
             {/* Saving Indicator */}
@@ -360,7 +394,8 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
             <Ruler />
             <div className="min-w-max flex justify-center w-[816px] py-4 print:py-0 mx-auto print:w-full print:min-w-0">
                 <EditorContent editor={editor} />
-                <Threads editor={editor}/>
+                {/* Only show Threads (comments) when NOT in draft mode */}
+                {!actualIsDraftMode && <Threads editor={editor}/>}
             </div>
         </div>
     );

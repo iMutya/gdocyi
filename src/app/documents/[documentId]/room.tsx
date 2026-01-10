@@ -17,10 +17,10 @@ type User = {id: string; name:string; avatar:string; color:string;};
 
 export function Room({ children }: { children: ReactNode }) {
     const params = useParams();
+    const documentId = params.documentId as string;
 
     const [users, setUsers] = useState<User[]>([]);
 
-    // i use useCallback instead of useMemo because await isn't allowed in non-async function
     const fetchUsers = useCallback(async () => {
         try{
           const list = await getUsers();
@@ -41,7 +41,7 @@ export function Room({ children }: { children: ReactNode }) {
         throttle={16}
         authEndpoint={async () => {
           const endpoint = "/api/liveblocks-auth";
-          const room = params.documentId as string;
+          const room = documentId;
 
           const response = await fetch(endpoint, {
             method: "POST",
@@ -74,7 +74,12 @@ export function Room({ children }: { children: ReactNode }) {
           }));
         }}
     >
-      <RoomProvider id={params.documentId as string} initialStorage={{ leftMargin: LEFT_MARGIN_DEFAULT, rightMargin: RIGHT_MARGIN_DEFAULT }}>
+      {/* ALWAYS render RoomProvider, even for drafts */}
+      <RoomProvider 
+        id={documentId} 
+        initialPresence={{}}
+        initialStorage={{ leftMargin: LEFT_MARGIN_DEFAULT, rightMargin: RIGHT_MARGIN_DEFAULT }}
+      >
         <ClientSideSuspense fallback={<FullScreenLoader label="Room Loading..." />}>
           {children}
         </ClientSideSuspense>

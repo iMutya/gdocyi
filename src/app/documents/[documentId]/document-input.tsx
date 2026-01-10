@@ -1,3 +1,5 @@
+"use client";
+
 import { BsCloudCheck, BsCloudSlash } from "react-icons/bs";
 import { Id } from "../../../../convex/_generated/dataModel";
 import { useRef, useState, useEffect } from "react";
@@ -5,7 +7,6 @@ import { useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useDebounce } from "@/hooks/use-debounce";
 import { toast } from "sonner";
-import { useStatus } from "@liveblocks/react";
 import { LoaderIcon, EyeOff, Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -18,11 +19,10 @@ interface DocumentInputProps {
 }
 
 export const DocumentInput = ({ title, id, isDraftMode = false, draftExpiresAt }: DocumentInputProps) => {
-    const status = useStatus();
-
     const [value, setValue] = useState(title);
     const [isPending, setIsPending] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
+    const [connectionState, setConnectionState] = useState<"connected" | "disconnected" | "connecting">("connecting");
 
     const inputRef = useRef<HTMLInputElement>(null);
     const mutate = useMutation(api.documents.updateById);
@@ -33,6 +33,40 @@ export const DocumentInput = ({ title, id, isDraftMode = false, draftExpiresAt }
             setValue(title);
         }
     }, [title, isEditing]);
+
+    // Simulate connection status
+    useEffect(() => {
+        if (isDraftMode) {
+            // In draft mode, show as connected immediately
+            setConnectionState("connected");
+            return;
+        }
+        
+        // For non-draft mode, simulate connection process
+        setConnectionState("connecting");
+        
+        const timer = setTimeout(() => {
+            setConnectionState("connected");
+        }, 1000);
+        
+        // You could add error simulation here
+        const errorTimer = setTimeout(() => {
+            // Simulate occasional disconnections
+            if (Math.random() > 0.9) {
+                setConnectionState("disconnected");
+                
+                // Auto-reconnect after 3 seconds
+                setTimeout(() => {
+                    setConnectionState("connected");
+                }, 3000);
+            }
+        }, 5000);
+        
+        return () => {
+            clearTimeout(timer);
+            clearTimeout(errorTimer);
+        };
+    }, [isDraftMode]);
 
     const debouncedUpdate = useDebounce((newValue: string) => {
         if (newValue === title) return;
@@ -109,8 +143,50 @@ export const DocumentInput = ({ title, id, isDraftMode = false, draftExpiresAt }
         return "< 1m";
     };
 
-    const showLoader = isPending || status === "connecting" || status === "reconnecting";
-    const showError = status === "disconnected";
+    // Get connection status text based on connectionState
+    const getConnectionStatus = () => {
+        if (isDraftMode) {
+            return {
+                showError: false,
+                showLoader: isPending,
+                showSuccess: !isPending,
+                text: isPending ? "Saving draft..." : "Draft mode"
+            };
+        }
+        
+        switch (connectionState) {
+            case "connected":
+                return {
+                    showError: false,
+                    showLoader: false,
+                    showSuccess: true,
+                    text: "Live"
+                };
+            case "disconnected":
+                return {
+                    showError: true,
+                    showLoader: false,
+                    showSuccess: false,
+                    text: "Offline"
+                };
+            case "connecting":
+                return {
+                    showError: false,
+                    showLoader: true,
+                    showSuccess: false,
+                    text: "Connecting..."
+                };
+            default:
+                return {
+                    showError: false,
+                    showLoader: true,
+                    showSuccess: false,
+                    text: "Connecting..."
+                };
+        }
+    };
+
+    const connectionStatus = getConnectionStatus();
     const timeLeft = getTimeLeft();
 
     return (
@@ -156,142 +232,23 @@ export const DocumentInput = ({ title, id, isDraftMode = false, draftExpiresAt }
                 )}
             </div>
 
-            {/* Draft Mode Badge */}
-            {isDraftMode && (
-                <Badge 
-                    variant="outline" 
-                    className={cn(
-                        "flex items-center gap-1 px-2 py-1 text-xs font-medium",
-                        timeLeft === "Expired" 
-                            ? "bg-red-50 text-red-700 border-red-300"
-                            : "bg-amber-50 text-amber-700 border-amber-300"
-                    )}
-                >
-                    <EyeOff className="h-3 w-3" />
-                    <span>Draft</span>
-                    {timeLeft && timeLeft !== "Expired" && (
-                        <>
-                            <span className="mx-1">•</span>
-                            <Clock className="h-3 w-3" />
-                            <span>{timeLeft}</span>
-                        </>
-                    )}
-                    {timeLeft === "Expired" && (
-                        <span className="ml-1 font-bold">EXPIRED</span>
-                    )}
-                </Badge>
-            )}
-
+            
             {/* Connection Status Indicators */}
             <div className="flex items-center gap-1 ml-2">
-                {showError && <BsCloudSlash className="size-4 text-red-500" />}
-                {!showError && !showLoader && <BsCloudCheck className="size-4 text-green-500" />}
-                {showLoader && <LoaderIcon className="size-4 animate-spin text-muted-foreground" />}
+                {connectionStatus.showError && <BsCloudSlash className="size-4 text-red-500" />}
+                {connectionStatus.showSuccess && <BsCloudCheck className="size-4 text-green-500" />}
+                {connectionStatus.showLoader && <LoaderIcon className="size-4 animate-spin text-muted-foreground" />}
                 
-                {/* Draft Save Indicator */}
-                {isDraftMode && isPending && (
-                    <span className="text-xs text-amber-600 ml-1">
-                        Saving draft...
-                    </span>
-                )}
+                {/* Status Text */}
+                <span className={cn(
+                    "text-xs",
+                    connectionStatus.showError ? "text-red-600" : 
+                    connectionStatus.showSuccess ? "text-green-600" : 
+                    "text-muted-foreground"
+                )}>
+                    {connectionStatus.text}
+                </span>
             </div>
         </div>
     );
 };
-
-
-
-
-
-
-
-
-
-// import { BsCloudCheck, BsCloudSlash} from "react-icons/bs"
-// import { Id } from "../../../../convex/_generated/dataModel";
-// import { useRef, useState } from "react";
-// import { useMutation } from "convex/react";
-// import { api } from "../../../../convex/_generated/api";
-// import { useDebounce } from "@/hooks/use-debounce";
-// import { toast } from "sonner";
-// import { useStatus } from "@liveblocks/react";
-// import { LoaderIcon } from "lucide-react";
-
-// interface DocumentInputProps{
-//     title: string;
-//     id: Id<"documents">;
-// }
-
-// export const DocumentInput = ({title, id}: DocumentInputProps) => {
-//     const status = useStatus();
-
-//     const [value, setValue] = useState(title);
-//     const [isPending, setIsPending] = useState(false);
-//     const [isEditing, setIsEditing] = useState(false);
-
-//     const inputRef = useRef<HTMLInputElement>(null);
-//     const mutate = useMutation(api.documents.updateById)
-
-//     const debouncedUpdate = useDebounce((newValue: string) => {
-//         if (newValue === title) return;
-
-//         setIsPending(true);
-//         mutate({id, title: newValue})
-//             .then(() => toast.success("Document updated"))
-//             .catch(() => toast.error("Something went wrong"))
-//             .finally(() => setIsPending(false));
-//     })
-
-//     const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-//         const newValue = e.target.value;
-//         setValue(newValue);
-//         debouncedUpdate(newValue);
-//     };
-
-//     const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-//         e.preventDefault();
-
-//         setIsPending(true);
-//         mutate({id, title: value})
-//             .then(() => {
-//                 toast.success("Document updated");
-//                 setIsEditing(false);
-//             })
-//             .catch(() => toast.error("Something went wrong"))
-//             .finally(() => setIsPending(false));
-//     }
-
-//     const showLoader = isPending || status === "connecting" || status === "reconnecting";
-//     const showError = status === "disconnected";
-    
-//     return(
-//         <div className="flex items-center gap-2">
-//             {isEditing ? (
-//                 <form onSubmit={handleSubmit} className="relative w-fit max-w-[50ch]">
-//                     <span className="invisible whitespace-pre px-1.5 text-lg">
-//                         {value || " "}
-//                     </span>
-//                     <input
-//                         ref={inputRef}
-//                         value={value}
-//                         onBlur={() => setIsEditing(false)}
-//                         onChange={onChange}
-//                         className="absolute inset-0 text-lg text-black px-1.5 bg-transparent truncate"
-//                     />
-//                 </form>
-//             ): (
-//                 <span
-//                     onClick={() => {
-//                         setIsEditing(true);
-//                         setTimeout(() => {
-//                             inputRef.current?.focus();
-//                         },0);
-//                     }}
-//                 className="text-lg px-1.5 cursor-pointer truncate">{title}</span>
-//             )}
-//             {showError && <BsCloudSlash className="size-4"/>}
-//             {!showError && !showLoader && <BsCloudCheck className="size-4"/>}
-//             {showLoader && <LoaderIcon className="size-4 animate-spin text-muted-foreground"/>}
-//         </div>
-//     )
-// }
