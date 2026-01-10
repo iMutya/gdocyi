@@ -58,16 +58,17 @@ export async function POST(req: Request) {
 
         // Get session for org check
         const { sessionClaims } = await auth();
+
         
         // === IMPORTANT: Clerk stores org ID as o?.id ===
         console.log("=== SESSION CLAIMS DEBUG ===");
         console.log("Full sessionClaims:", JSON.stringify(sessionClaims, null, 2));
-        console.log("Session org (o?.id):", sessionClaims?.o?.id);
+        console.log("Session org (o?.id):", (sessionClaims as any)?.o?.id);
         console.log("=== END DEBUG ===");
 
         // Check permissions
         const isOwner = document.ownerId === user.id;
-        const userOrgId = sessionClaims?.o?.id; // This is the correct path for Clerk
+        const userOrgId = (sessionClaims as any)?.o?.id; // This is the correct path for Clerk
         const isOrganizationMember = !!(document.organizationId && document.organizationId === userOrgId);
 
         console.log("=== AUTH DEBUG ===");
