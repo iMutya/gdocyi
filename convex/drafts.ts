@@ -111,7 +111,7 @@ export const mergeAnyDraft = mutation({
     }
 
     await ctx.db.patch(draft.documentId, {
-      initialContent: draft.content,
+      // initialContent: draft.content,
       publishedContent: draft.content,
       lastPublishedAt: Date.now(),
     });
@@ -288,7 +288,8 @@ export const updateDraft = mutation({
   },
 });
 
-// 9. Publish draft - CRITICAL (3.16 KB) - SAFE OPTIMIZATION
+// In convex/draft.ts, REPLACE the entire publishDraft function (lines 163-190):
+
 export const publishDraft = mutation({
   args: {
     draftId: v.id("draftDocuments"),
@@ -304,11 +305,9 @@ export const publishDraft = mutation({
       throw new Error("Unauthorized");
     }
 
-    // Use the existing documents.publishContent if you have it
-    // Otherwise keep your current logic
+    // ✅ FIX: Update publishedContent only, NOT initialContent
     await ctx.db.patch(draft.documentId, {
-      initialContent: draft.content,
-      publishedContent: draft.content,
+      publishedContent: draft.content, // Only publish to publishedContent
       lastPublishedAt: Date.now(),
     });
 
@@ -316,7 +315,6 @@ export const publishDraft = mutation({
       isActive: false,
     });
 
-    // OPTIMIZATION: Return just the ID, not full document
     return draft.documentId;
   },
 });

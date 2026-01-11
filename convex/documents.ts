@@ -80,66 +80,138 @@ export const getDocumentForAuth = query({
   },
 });
 
-// 4. Document room info - CRITICAL OPTIMIZATION (6.82 KB)
+
+// 4. Document room info - FIXED: Now includes draft lock info
 export const getDocumentRoomInfo = query({
-  args: { id: v.id("documents") },
-  handler: async (ctx, args) => {
-    const user = await ctx.auth.getUserIdentity();
-    if (!user) return null;
+    args: { id: v.id("documents") },
+    handler: async (ctx, args) => {
+        const user = await ctx.auth.getUserIdentity();
+        if (!user) return null;
 
-    const document = await ctx.db.get(args.id);
-    if (!document) return null;
+        const document = await ctx.db.get(args.id);
+        if (!document) return null;
 
-    const userId = user.subject;
-    const organizationId = (user.organization_id ?? undefined) as string | undefined;
-    
-    // OPTIMIZATION: Run queries in parallel
-    const [userActiveDraft, otherUserActiveDraft] = await Promise.all([
-      // User's active draft
-      ctx.db
-        .query("draftDocuments")
-        .withIndex("by_owner_active", (q) =>
-          q.eq("ownerId", userId).eq("isActive", true)
-        )
-        .filter((q) => q.eq(q.field("documentId"), args.id))
-        .first(),
-      // Other user's active draft
-      organizationId 
-        ? ctx.db
-            .query("draftDocuments")
-            .withIndex("by_document", (q) => q.eq("documentId", args.id))
-            .filter((q) => 
-              q.and(
-                q.eq(q.field("isActive"), true),
-                q.neq(q.field("ownerId"), userId),
-                q.eq(q.field("organizationId"), organizationId)
-              )
-            )
-            .first()
-        : ctx.db
-            .query("draftDocuments")
-            .withIndex("by_document", (q) => q.eq("documentId", args.id))
-            .filter((q) => 
-              q.and(
-                q.eq(q.field("isActive"), true),
-                q.neq(q.field("ownerId"), userId),
-                q.eq(q.field("organizationId"), undefined)
-              )
-            )
-            .first()
-    ]);
+        const userId = user.subject;
+        const organizationId = (user.organization_id ?? undefined) as string | undefined;
+        
+        // ✅ FIXED: Run queries in parallel AND get both draft statuses
+        const [userActiveDraft, otherUserActiveDrafts] = await Promise.all([
+            // User's active draft
+            ctx.db
+                .query("draftDocuments")
+                .withIndex("by_owner_active", (q) =>
+                    q.eq("ownerId", userId).eq("isActive", true)
+                )
+                .filter((q) => q.eq(q.field("documentId"), args.id))
+                .first(),
+            // Other users' active drafts
+            organizationId 
+                ? ctx.db
+                    .query("draftDocuments")
+                    .withIndex("by_document", (q) => q.eq("documentId", args.id))
+                    .filter((q) => 
+                        q.and(
+                            q.eq(q.field("isActive"), true),
+                            q.neq(q.field("ownerId"), userId),
+                            q.eq(q.field("organizationId"), organizationId)
+                        )
+                    )
+                    .collect()
+                : ctx.db
+                    .query("draftDocuments")
+                    .withIndex("by_document", (q) => q.eq("documentId", args.id))
+                    .filter((q) => 
+                        q.and(
+                            q.eq(q.field("isActive"), true),
+                            q.neq(q.field("ownerId"), userId),
+                            q.eq(q.field("organizationId"), undefined)
+                        )
+                    )
+                    .collect()
+        ]);
 
-    const shouldEnableLiveBlocks = !userActiveDraft && !otherUserActiveDraft;
+        const hasOtherUserDraft = otherUserActiveDrafts.length > 0;
+        const shouldEnableLiveBlocks = !userActiveDraft && !hasOtherUserDraft;
 
-    // OPTIMIZATION: Remove redundant fields to reduce bandwidth
-    return {
-      roomId: document.roomId || document._id,
-      shouldEnableLiveBlocks,
-      isOwner: document.ownerId === userId,
-      // Removed: documentId (same as args.id), hasUserDraft, hasOtherUserDraft
-    };
-  },
+        // ✅ FIXED: Return ALL necessary fields for editor lock
+        return {
+            // Room info
+            roomId: document.roomId || document._id,
+            shouldEnableLiveBlocks,
+            isOwner: document.ownerId === userId,
+            
+            // ✅ CRITICAL: Add these draft lock fields
+            hasOtherUserDraft: hasOtherUserDraft,
+            currentUserHasDraft: !!userActiveDraft,
+            otherDraftCount: otherUserActiveDrafts.length,
+            
+            // Optional debug info
+            currentUserId: userId,
+            documentOwnerId: document.ownerId,
+            totalDrafts: (userActiveDraft ? 1 : 0) + otherUserActiveDrafts.length
+        };
+    },
 });
+// // 4. Document room info - CRITICAL OPTIMIZATION (6.82 KB)
+// export const getDocumentRoomInfo = query({
+//   args: { id: v.id("documents") },
+//   handler: async (ctx, args) => {
+//     const user = await ctx.auth.getUserIdentity();
+//     if (!user) return null;
+
+//     const document = await ctx.db.get(args.id);
+//     if (!document) return null;
+
+//     const userId = user.subject;
+//     const organizationId = (user.organization_id ?? undefined) as string | undefined;
+    
+//     // OPTIMIZATION: Run queries in parallel
+//     const [userActiveDraft, otherUserActiveDraft] = await Promise.all([
+//       // User's active draft
+//       ctx.db
+//         .query("draftDocuments")
+//         .withIndex("by_owner_active", (q) =>
+//           q.eq("ownerId", userId).eq("isActive", true)
+//         )
+//         .filter((q) => q.eq(q.field("documentId"), args.id))
+//         .first(),
+//       // Other user's active draft
+//       organizationId 
+//         ? ctx.db
+//             .query("draftDocuments")
+//             .withIndex("by_document", (q) => q.eq("documentId", args.id))
+//             .filter((q) => 
+//               q.and(
+//                 q.eq(q.field("isActive"), true),
+//                 q.neq(q.field("ownerId"), userId),
+//                 q.eq(q.field("organizationId"), organizationId)
+//               )
+//             )
+//             .first()
+//         : ctx.db
+//             .query("draftDocuments")
+//             .withIndex("by_document", (q) => q.eq("documentId", args.id))
+//             .filter((q) => 
+//               q.and(
+//                 q.eq(q.field("isActive"), true),
+//                 q.neq(q.field("ownerId"), userId),
+//                 q.eq(q.field("organizationId"), undefined)
+//               )
+//             )
+//             .first()
+//     ]);
+
+//     const shouldEnableLiveBlocks = !userActiveDraft && !otherUserActiveDraft;
+
+//     // OPTIMIZATION: Remove redundant fields to reduce bandwidth
+//     return {
+//       roomId: document.roomId || document._id,
+//       shouldEnableLiveBlocks,
+//       isOwner: document.ownerId === userId,
+//       // Removed: documentId (same as args.id), hasUserDraft, hasOtherUserDraft
+//     };
+//   },
+// });
 
 // 5. Get by IDs - OPTIMIZED: Use Promise.all for parallel gets
 export const getByIds = query({
@@ -346,11 +418,15 @@ export const getById = query({
           organizationId: document.organizationId,
           initialContent: document.publishedContent || document.initialContent || "",
           _draftBlocked: true,
+          publishedContent: document.publishedContent || "",
         };
       }
     }
 
-    return document;
+    return {
+      ... document,
+      publishedContent: document.publishedContent || "",
+    };
   },
 });
 
@@ -418,6 +494,7 @@ export const getWithDraft = query({
       draftContent: userDraft?.content,
       draftExpiresAt: userDraft?.expiresAt,
       isInDraftMode: !!userDraft,
+      publishedContent: document.publishedContent || "",
     };
   },
 });
@@ -485,7 +562,7 @@ export const publishContent = mutation({
     if (!document) throw new ConvexError("Document not found");
 
     await ctx.db.patch(args.id, {
-      initialContent: args.content,
+      // initialContent: args.content,
       publishedContent: args.content,
       lastPublishedAt: Date.now(),
     });
