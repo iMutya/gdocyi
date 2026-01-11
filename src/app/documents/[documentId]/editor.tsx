@@ -442,11 +442,11 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
                         <div className="flex items-center gap-2">
                             <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-300">
                                 <Clock className="h-3 w-3 mr-1" />
-                                Document Locked
+                                Editing in Progress
                             </Badge>
                             <div className="text-sm text-blue-800">
-                                Another user is editing this document in draft mode. 
-                                You can view but not edit until they publish their changes.
+                                Another user is editing this document.
+                                You’re viewing changes live, but editing is temporarily disabled.
                             </div>
                         </div>
                         {/* Debug info
@@ -458,12 +458,63 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
                     </div>
                 </div>
             )}
+
+            {actualIsDraftMode && !shouldLockEditor && (
+                <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-5 duration-300">
+                    <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg shadow-lg">
+                    <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-300">
+                        <Clock className="h-3 w-3 mr-1" />
+                        You're editing
+                        </Badge>
+                        <div className="text-sm text-blue-800">
+                        You are currently editing this document in draft mode. 
+                        Click "Finish editing" to publish your changes to everyone.
+                        </div>
+                    </div>
+                    <Button
+                        size="sm"
+                        onClick={async () => {
+                        if (activeDraft?._id) {
+                            await publishDraft({ draftId: activeDraft._id });
+                        }
+                        }}
+                        disabled={!activeDraft?._id}
+                        className="ml-2 bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                        Finish editing
+                    </Button>
+                    </div>
+                </div>
+            )}
+
+            {/* ✍️ YOU are editing
+            {actualIsDraftMode && !shouldLockEditor && (
+            <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+                <Badge className="bg-blue-100 text-blue-700 border-blue-300">
+                You’re editing
+                </Badge>
+
+                <Button
+                    size="sm"
+                    onClick={async () => {
+                        if (activeDraft?._id) {
+                        await publishDraft({ draftId: activeDraft._id });
+                        }
+                    }}
+                    disabled={!activeDraft?._id}
+                    >
+                    Finish editing
+                </Button>
+                
+            </div>
+            )} */}
             
             {/* Saving Indicator */}
             {isUpdating && (
                 <div className="fixed bottom-4 right-4 z-50 px-3 py-2 bg-blue-100 text-blue-700 text-sm rounded-lg shadow flex items-center gap-2">
                     <Loader2 className="h-3 w-3 animate-spin" />
-                    <span>Saving {actualIsDraftMode ? 'draft' : 'changes'}...</span>
+                    <span>Saving changes...</span>
                 </div>
             )}
             
