@@ -42,7 +42,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { type Level } from "@tiptap/extension-heading"
 import { type ColorResult, SketchPicker } from "react-color"
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge";
@@ -59,11 +59,14 @@ interface ToolbarProps {
     documentId?: Id<"documents">;
 }
 
-// Add draft controls component
+
 const DraftControls = ({ documentId, isDraftMode }: { documentId?: Id<"documents">, isDraftMode?: boolean }) => {
     const [isLoading, setIsLoading] = useState(false);
+    const { editor } = useEditorStore();
+
+    // Get the main document to know what to revert to
+    const document = useQuery(api.documents.getById, documentId ? { id: documentId } : "skip");
     
-    // Get active draft for real-time updates
     const activeDraft = useQuery(api.drafts.getActiveDraft, 
         documentId ? { documentId } : "skip"
     );
@@ -72,24 +75,19 @@ const DraftControls = ({ documentId, isDraftMode }: { documentId?: Id<"documents
     const publishDraft = useMutation(api.drafts.publishDraft);
     const discardDraft = useMutation(api.drafts.discardDraft);
 
-    // Calculate time left for draft
     const getTimeLeft = () => {
         if (!activeDraft?.expiresAt) return null;
-        
         const expiresIn = activeDraft.expiresAt - Date.now();
         if (expiresIn <= 0) return "Expired";
-        
         const hours = Math.floor(expiresIn / (1000 * 60 * 60));
         const minutes = Math.floor((expiresIn % (1000 * 60 * 60)) / (1000 * 60));
-        
         if (hours > 0) return `${hours}h ${minutes}m`;
         if (minutes > 0) return `${minutes}m`;
         return "< 1m";
     };
 
-    const handleEnterDraftMode = async () => {
+    const handleEnterDraftMode = useCallback(async () => {
         if (!documentId) return;
-        
         setIsLoading(true);
         try {
             await getOrCreateDraft({ documentId });
@@ -100,11 +98,10 @@ const DraftControls = ({ documentId, isDraftMode }: { documentId?: Id<"documents
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [documentId, getOrCreateDraft]);
 
-    const handlePublishDraft = async () => {
+    const handlePublishDraft = useCallback(async () => {
         if (!activeDraft?._id) return;
-        
         setIsLoading(true);
         try {
             await publishDraft({ draftId: activeDraft._id });
@@ -115,22 +112,37 @@ const DraftControls = ({ documentId, isDraftMode }: { documentId?: Id<"documents
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [activeDraft?._id, publishDraft]);
 
-    const handleExitDraftMode = async () => {
+    const handleExitDraftMode = useCallback(async () => {
         if (!activeDraft?._id) return;
-        
+        if (!confirm("Discard this draft?")) return;
+
+        // Get the global lock from the store
+        const { setIsDiscarding } = useEditorStore.getState();
+
         setIsLoading(true);
         try {
+            // 1. ACTIVATE GLOBAL LOCK (Mutes the Editor)
+            setIsDiscarding(true);
+
             await discardDraft({ draftId: activeDraft._id });
+
+            if (editor) {
+                const revertTo = document?.publishedContent || "";
+                editor.commands.setContent(revertTo, false);
+            }
             toast.success("Draft discarded");
         } catch (error) {
-            console.error("Failed to exit draft mode:", error);
-            toast.error("Failed to exit draft mode");
+            console.error(error);
+            setIsDiscarding(false); 
         } finally {
             setIsLoading(false);
+            // 2. KEEP LOCKED FOR 1.5s (Allows Convex queries to refresh)
+            setTimeout(() => setIsDiscarding(false), 1500);
         }
-    };
+    }, [activeDraft, discardDraft, editor, document]);
+
 
     const timeLeft = getTimeLeft();
     const actualIsDraftMode = isDraftMode || !!activeDraft;
@@ -165,10 +177,11 @@ const DraftControls = ({ documentId, isDraftMode }: { documentId?: Id<"documents
                     size="sm"
                     onClick={handleExitDraftMode}
                     disabled={isLoading}
-                    className="h-7 px-2 text-xs"
-                >
+                    className="h-7 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-200"
+                    title="Discard draft without publishing"
+                    >
                     <X className="h-3 w-3 mr-1" />
-                    Exit
+                    Discard Draft
                 </Button>
                 
                 <Button
@@ -201,6 +214,7 @@ const DraftControls = ({ documentId, isDraftMode }: { documentId?: Id<"documents
     );
 };
 
+//end
 const ViewAllDraftsButton = ({ documentId }: { documentId?: Id<"documents"> }) => {
     const [isOpen, setIsOpen] = useState(false);
     const { user } = useUser();
@@ -219,10 +233,10 @@ const ViewAllDraftsButton = ({ documentId }: { documentId?: Id<"documents"> }) =
     );
 
     // Mutations
-    const createDraft = useMutation(api.drafts.getOrCreateDraft);
-    const publishDraft = useMutation(api.drafts.publishDraft);
-    const mergeAnyDraft = useMutation(api.drafts.mergeAnyDraft);
-    const discardDraft = useMutation(api.drafts.discardDraft);
+    const createDraftMutation = useMutation(api.drafts.getOrCreateDraft);
+    const publishDraftMutation = useMutation(api.drafts.publishDraft);
+    const mergeAnyDraftMutation = useMutation(api.drafts.mergeAnyDraft);
+    const discardDraftMutation = useMutation(api.drafts.discardDraft);
     
     // Compare data
     const [compareDraftId, setCompareDraftId] = useState<string | null>(null);
@@ -234,7 +248,7 @@ const ViewAllDraftsButton = ({ documentId }: { documentId?: Id<"documents"> }) =
     const handleCreateDraft = async () => {
         if (!documentId) return;
         try {
-            await createDraft({ documentId });
+            await createDraftMutation({ documentId });
             toast.success("Draft created! You can now edit it.");
             setIsOpen(false);
         } catch (error) {
@@ -246,13 +260,13 @@ const ViewAllDraftsButton = ({ documentId }: { documentId?: Id<"documents"> }) =
     const handleMergeDraft = async (draftId: string, isMyDraft: boolean) => {
         if (isMyDraft) {
             if (confirm("Publish your draft to the main document?")) {
-                await publishDraft({ draftId: draftId as Id<"draftDocuments"> });
+                await publishDraftMutation({ draftId: draftId as Id<"draftDocuments"> });
                 toast.success("Draft published!");
                 setIsOpen(false);
             }
         } else {
             if (confirm("Merge this user's draft into the main document?")) {
-                await mergeAnyDraft({ draftId: draftId as Id<"draftDocuments"> });
+                await mergeAnyDraftMutation({ draftId: draftId as Id<"draftDocuments"> });
                 toast.success("Draft merged!");
                 setIsOpen(false);
             }
@@ -261,7 +275,7 @@ const ViewAllDraftsButton = ({ documentId }: { documentId?: Id<"documents"> }) =
 
     const handleDiscardDraft = async (draftId: string) => {
         if (confirm("Discard this draft permanently?")) {
-            await discardDraft({ draftId: draftId as Id<"draftDocuments"> });
+            await discardDraftMutation({ draftId: draftId as Id<"draftDocuments"> });
             toast.success("Draft discarded");
             setIsOpen(false);
         }

@@ -4,9 +4,13 @@ import { type Editor } from "@tiptap/react";
 interface EditorState {
     editor: Editor | null;
     setEditor: (editor: Editor | null) => void;
+    isDiscarding: boolean;
+    setIsDiscarding: (isDiscarding: boolean) => void;
 };
 
 export const useEditorStore = create<EditorState> ((set) => ({
     editor: null,
     setEditor:(editor) => set({ editor }),
+    isDiscarding: false,
+    setIsDiscarding: (isDiscarding) => set({ isDiscarding }),
 }));

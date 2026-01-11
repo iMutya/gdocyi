@@ -81,7 +81,6 @@ export const getDocumentForAuth = query({
 });
 
 
-// 4. Document room info - FIXED: Now includes draft lock info
 export const getDocumentRoomInfo = query({
     args: { id: v.id("documents") },
     handler: async (ctx, args) => {
@@ -92,63 +91,35 @@ export const getDocumentRoomInfo = query({
         if (!document) return null;
 
         const userId = user.subject;
-        const organizationId = (user.organization_id ?? undefined) as string | undefined;
+        const organizationId = user.organization_id ?? undefined;
         
-        // ✅ FIXED: Run queries in parallel AND get both draft statuses
         const [userActiveDraft, otherUserActiveDrafts] = await Promise.all([
-            // User's active draft
-            ctx.db
-                .query("draftDocuments")
-                .withIndex("by_owner_active", (q) =>
-                    q.eq("ownerId", userId).eq("isActive", true)
-                )
+            ctx.db.query("draftDocuments")
+                .withIndex("by_owner_active", (q) => q.eq("ownerId", userId).eq("isActive", true))
                 .filter((q) => q.eq(q.field("documentId"), args.id))
                 .first(),
-            // Other users' active drafts
-            organizationId 
-                ? ctx.db
-                    .query("draftDocuments")
-                    .withIndex("by_document", (q) => q.eq("documentId", args.id))
-                    .filter((q) => 
-                        q.and(
-                            q.eq(q.field("isActive"), true),
-                            q.neq(q.field("ownerId"), userId),
-                            q.eq(q.field("organizationId"), organizationId)
-                        )
-                    )
-                    .collect()
-                : ctx.db
-                    .query("draftDocuments")
-                    .withIndex("by_document", (q) => q.eq("documentId", args.id))
-                    .filter((q) => 
-                        q.and(
-                            q.eq(q.field("isActive"), true),
-                            q.neq(q.field("ownerId"), userId),
-                            q.eq(q.field("organizationId"), undefined)
-                        )
-                    )
-                    .collect()
+            ctx.db.query("draftDocuments")
+                .withIndex("by_document", (q) => q.eq("documentId", args.id))
+                .filter((q) => q.and(q.eq(q.field("isActive"), true), q.neq(q.field("ownerId"), userId)))
+                .collect()
         ]);
 
         const hasOtherUserDraft = otherUserActiveDrafts.length > 0;
-        const shouldEnableLiveBlocks = !userActiveDraft && !hasOtherUserDraft;
 
-        // ✅ FIXED: Return ALL necessary fields for editor lock
+        // ✅ NEW: Get the name of the first person editing
+        let otherEditorName = "Another user";
+        if (hasOtherUserDraft) {
+            // If you store user names in a 'users' table or metadata, fetch it here.
+            // If it's stored in the draft document directly:
+            otherEditorName = otherUserActiveDrafts[0].ownerName || "Another user";
+        }
+
         return {
-            // Room info
             roomId: document.roomId || document._id,
-            shouldEnableLiveBlocks,
             isOwner: document.ownerId === userId,
-            
-            // ✅ CRITICAL: Add these draft lock fields
-            hasOtherUserDraft: hasOtherUserDraft,
+            hasOtherUserDraft,
             currentUserHasDraft: !!userActiveDraft,
-            otherDraftCount: otherUserActiveDrafts.length,
-            
-            // Optional debug info
-            currentUserId: userId,
-            documentOwnerId: document.ownerId,
-            totalDrafts: (userActiveDraft ? 1 : 0) + otherUserActiveDrafts.length
+            otherEditorName, // ✅ Pass the name back to the UI
         };
     },
 });

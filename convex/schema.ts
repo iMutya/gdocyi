@@ -25,6 +25,7 @@ export default defineSchema({
     documentId: v.id("documents"), // Reference to main document
     content: v.string(), // Current draft content
     ownerId: v.string(), // Who created the draft
+    ownerName: v.string(), // Who created the draft
     roomId: v.optional(v.string()), // Copy roomId for Liveblocks
     createdAt: v.number(),
     expiresAt: v.number(), // Auto-expiration timestamp (24 hours)

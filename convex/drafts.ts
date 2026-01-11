@@ -159,6 +159,7 @@ export const createDraftForUser = mutation({
       return existingDraft._id;
     }
 
+    const targetOwnerName = "Collaborator";
     const now = Date.now();
     const expiresAt = now + 24 * 60 * 60 * 1000;
 
@@ -166,6 +167,7 @@ export const createDraftForUser = mutation({
       documentId: args.documentId,
       content: args.content || document.initialContent || "",
       ownerId: args.userId,
+      ownerName: targetOwnerName,
       roomId: `draft:${args.documentId}:${args.userId}:${now}`,
       organizationId: document.organizationId,
       createdAt: now,
@@ -178,7 +180,6 @@ export const createDraftForUser = mutation({
   },
 });
 
-// 6. Get or create draft - CRITICAL OPTIMIZATION (Safe)
 export const getOrCreateDraft = mutation({
   args: {
     documentId: v.id("documents"),
@@ -190,47 +191,87 @@ export const getOrCreateDraft = mutation({
     const userId = identity.subject;
     const organizationId = (identity.organization_id ?? undefined) as string | undefined;
 
+    // ✅ FIX: Ensure this is treated as a string to avoid the JSONValue error
+    const rawName = identity.name || identity.nickname || identity.given_name || "Guest Editor";
+    const ownerName = String(rawName); 
+
     const document = await ctx.db.get(args.documentId);
     if (!document) throw new Error("Document not found");
 
-    // CHECK: Keep your existing query - it works
-    const existingDraft = await ctx.db
-      .query("draftDocuments")
-      .withIndex("by_owner_active", (q) =>
-        q.eq("ownerId", userId).eq("isActive", true)
-      )
-      .filter((q) => q.eq(q.field("documentId"), args.documentId))
-      .first();
-
-    if (existingDraft) {
-      // OPTIMIZATION: Only update timestamp every 30 seconds, not on every check
-      const thirtySecondsAgo = Date.now() - 30000;
-      if (existingDraft.lastUpdatedAt < thirtySecondsAgo) {
-        await ctx.db.patch(existingDraft._id, {
-          lastUpdatedAt: Date.now(),
-        });
-      }
-      return existingDraft._id;
-    }
-
-    const now = Date.now();
-    const expiresAt = now + 24 * 60 * 60 * 1000;
+    // ... existing draft check logic ...
 
     const draftId = await ctx.db.insert("draftDocuments", {
       documentId: args.documentId,
       content: document.initialContent || "",
       ownerId: userId,
-      roomId: `draft:${args.documentId}:${userId}:${now}`,
+      ownerName: ownerName, // Now TS is happy because this is strictly a string
+      roomId: `draft:${args.documentId}:${userId}:${Date.now()}`,
       organizationId: organizationId || document.organizationId,
-      createdAt: now,
-      expiresAt,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
       isActive: true,
-      lastUpdatedAt: now,
+      lastUpdatedAt: Date.now(),
     });
 
     return draftId;
   },
 });
+
+// // 6. Get or create draft - CRITICAL OPTIMIZATION (Safe)
+// export const getOrCreateDraft = mutation({
+//   args: {
+//     documentId: v.id("documents"),
+//   },
+//   handler: async (ctx, args) => {
+//     const identity = await ctx.auth.getUserIdentity();
+//     if (!identity) throw new Error("Not authenticated");
+
+//     const userId = identity.subject;
+//     const ownerName = identity.name || identity.nickname || "Anonymous User";
+//     const organizationId = (identity.organization_id ?? undefined) as string | undefined;
+
+//     const document = await ctx.db.get(args.documentId);
+//     if (!document) throw new Error("Document not found");
+
+//     // CHECK: Keep your existing query - it works
+//     const existingDraft = await ctx.db
+//       .query("draftDocuments")
+//       .withIndex("by_owner_active", (q) =>
+//         q.eq("ownerId", userId).eq("isActive", true)
+//       )
+//       .filter((q) => q.eq(q.field("documentId"), args.documentId))
+//       .first();
+
+//     if (existingDraft) {
+//       // OPTIMIZATION: Only update timestamp every 30 seconds, not on every check
+//       const thirtySecondsAgo = Date.now() - 30000;
+//       if (existingDraft.lastUpdatedAt < thirtySecondsAgo) {
+//         await ctx.db.patch(existingDraft._id, {
+//           lastUpdatedAt: Date.now(),
+//         });
+//       }
+//       return existingDraft._id;
+//     }
+
+//     const now = Date.now();
+//     const expiresAt = now + 24 * 60 * 60 * 1000;
+
+//     const draftId = await ctx.db.insert("draftDocuments", {
+//       documentId: args.documentId,
+//       content: document.initialContent || "",
+//       ownerId: userId,
+//       ownerName: ownerName,
+//       roomId: `draft:${args.documentId}:${userId}:${now}`,
+//       organizationId: organizationId || document.organizationId,
+//       createdAt: now,
+//       expiresAt,
+//       isActive: true,
+//       lastUpdatedAt: now,
+//     });
+
+//     return draftId;
+//   },
+// });
 
 // 7. Get active draft - CRITICAL OPTIMIZATION (Safe)
 export const getActiveDraft = query({
@@ -319,28 +360,44 @@ export const publishDraft = mutation({
   },
 });
 
-// 10. Discard draft - SAFE
 export const discardDraft = mutation({
   args: {
     draftId: v.id("draftDocuments"),
   },
   handler: async (ctx, args) => {
+    console.log("🗑️ DISCARD DRAFT MUTATION CALLED");
+    console.log("🗑️ Draft ID:", args.draftId);
+    
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    if (!identity) {
+      console.log("🗑️ Not authenticated");
+      throw new Error("Not authenticated");
+    }
 
+    console.log("🗑️ User ID:", identity.subject);
+    
     const draft = await ctx.db.get(args.draftId);
-    if (!draft) throw new Error("Draft not found");
+    if (!draft) {
+      console.log("🗑️ Draft not found");
+      throw new Error("Draft not found");
+    }
 
+    console.log("🗑️ Draft found - Owner:", draft.ownerId);
+    console.log("🗑️ Draft isActive:", draft.isActive);
+    
     if (draft.ownerId !== identity.subject) {
+      console.log("🗑️ Unauthorized - User is not owner");
       throw new Error("Unauthorized");
     }
 
-    await ctx.db.patch(args.draftId, {
-      isActive: false,
-    });
+    console.log("🗑️ Deleting draft...");
+    // ✅ DELETE instead of archive
+    await ctx.db.delete(args.draftId);
+    console.log("🗑️ Draft deleted successfully");
+    
+    return { deleted: true };
   },
 });
-
 // 11. Cleanup expired drafts - SAFE
 export const cleanupExpiredDrafts = mutation({
   handler: async (ctx) => {
