@@ -106,18 +106,33 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
     //     return hasOtherUserDraft && !actualIsDraftMode && !currentUserHasDraft;
     // }, [roomInfo?.hasOtherUserDraft, roomInfo?.currentUserHasDraft, actualIsDraftMode]);
 
-    // Source of truth for content
     const currentContent = React.useMemo(() => {
-        // If we are currently discarding, ignore the draft and return the published/initial state
+        // If we just discarded, the draft is gone from the DB, 
+        // but we want to show the published content immediately.
         if (discardInProgress.current) {
-            return documentWithDraft?.publishedContent || templateContentPreserved.current || "";
+            return documentWithDraft?.publishedContent || documentWithDraft?.initialContent || "";
         }
+
         if (activeDraft?.content) return activeDraft.content;
-        if (actualIsDraftMode && documentWithDraft?.draftContent) return documentWithDraft.draftContent;
-        if (!actualIsDraftMode && documentWithDraft?.publishedContent) return documentWithDraft.publishedContent;
-        if (documentWithDraft?.initialContent) return documentWithDraft.initialContent;
-        return templateContentPreserved.current || "";
-    }, [activeDraft?.content, documentWithDraft, actualIsDraftMode]);
+        
+        // If no draft, show published content
+        if (documentWithDraft?.publishedContent) return documentWithDraft.publishedContent;
+        
+        return documentWithDraft?.initialContent || "";
+    }, [activeDraft?.content, documentWithDraft, discardInProgress.current]);
+
+    // Source of truth for content
+    // const currentContent = React.useMemo(() => {
+    //     // If we are currently discarding, ignore the draft and return the published/initial state
+    //     if (discardInProgress.current) {
+    //         return documentWithDraft?.publishedContent || templateContentPreserved.current || "";
+    //     }
+    //     if (activeDraft?.content) return activeDraft.content;
+    //     if (actualIsDraftMode && documentWithDraft?.draftContent) return documentWithDraft.draftContent;
+    //     if (!actualIsDraftMode && documentWithDraft?.publishedContent) return documentWithDraft.publishedContent;
+    //     if (documentWithDraft?.initialContent) return documentWithDraft.initialContent;
+    //     return templateContentPreserved.current || "";
+    // }, [activeDraft?.content, documentWithDraft, actualIsDraftMode]);
 
     const liveblocks = useLiveblocksExtension({ initialContent, offlineSupport_experimental: true });
     const { setEditor } = useEditorStore();
@@ -157,90 +172,87 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
         content: "",
     });
 
-    const handleDiscardDraft = useCallback(async () => {
-        if (!activeDraft?._id) return;
-        if (!confirm("Are you sure you want to discard this draft?")) return;
-
-        // IMPORTANT: Turn off the flags first
-        discardInProgress.current = true; 
-        
-        // Clear any pending debounced saves immediately
-        if (saveTimeoutRef.current) {
-            clearTimeout(saveTimeoutRef.current);
-            saveTimeoutRef.current = null;
-        }
-
-        try {
-            setIsUpdating(true);
-
-            // Capture the "Reset" content before we delete the draft
-            const revertTo = documentWithDraft?.publishedContent || templateContentPreserved.current || "";
-
-            // Delete the draft
-            await discardDraft({ draftId: activeDraft._id });
-
-            // Force the editor to the old state
-            if (editor) {
-                editor.commands.setContent(revertTo, false);
-            }
-
-            setLocalContent(revertTo);
-            toast.success("Draft discarded");
-        } catch (error) {
-            console.error(error);
-            toast.error("Failed to discard draft");
-            discardInProgress.current = false; // Unlock if it failed
-        } finally {
-            setIsUpdating(false);
-            // Wait for Convex to broadcast that activeDraft is null
-            setTimeout(() => {
-                discardInProgress.current = false;
-            }, 1500); 
-        }
-    }, [activeDraft, discardDraft, editor, documentWithDraft]);
-
-    // 1. Add this Ref to track the ID without closure staleness
+     // 1. Add this Ref to track the ID without closure staleness
     const activeDraftIdRef = useRef(activeDraft?._id);
     useEffect(() => {
         activeDraftIdRef.current = activeDraft?._id;
     }, [activeDraft?._id]);
 
+    const handleDiscardDraft = useCallback(async () => {
+        if (!activeDraft?._id) return;
+        if (!confirm("Discard changes?")) return;
+
+        // 1. Set the flags immediately
+        discardInProgress.current = true;
+        const deletedId = activeDraft._id;
+        activeDraftIdRef.current = undefined;
+        ; 
+        try {
+            setIsUpdating(true);
+            const revertTo = documentWithDraft?.publishedContent || documentWithDraft?.initialContent || "";
+
+            // 3. Perform deletion
+            await discardDraft({ draftId: deletedId });
+
+            if (editor) {
+                editor.commands.setContent(revertTo, false);
+            }
+            
+            setLocalContent(revertTo);
+            toast.success("Draft discarded");
+        } catch (error) {
+            console.error(error);
+            discardInProgress.current = false;
+            // Restore ID ref if deletion failed
+            activeDraftIdRef.current = deletedId;
+        } finally {
+            setIsUpdating(false);
+            setTimeout(() => {
+                discardInProgress.current = false;
+            }, 1500); // Give it plenty of time to settle
+        }
+    }, [activeDraft, discardDraft, editor, documentWithDraft]);
+
+   
+
     const handleContentUpdate = useCallback(async (content: string) => {
-    // 2. Updated Guard: Check the Ref and the discard flag
-    const isGlobalDiscarding = useEditorStore.getState().isDiscarding;
-    if (discardInProgress.current || !activeDraftIdRef.current) return;
+        // 1. Initial Guard: Stop if discarding or ID is already gone
+        if (discardInProgress.current || !activeDraftIdRef.current) return;
 
-    if (isGlobalDiscarding || discardInProgress.current || !activeDraftIdRef.current) {
-        return; // This stops the "Draft not found" error!
-    }
+        if (!documentId || isUpdating || !initialLoadDone.current || contentUpdateInProgress.current) return;
 
-    if (!documentId || isUpdating || !initialLoadDone.current || contentUpdateInProgress.current) return;
+        try {
+            contentUpdateInProgress.current = true;
+            setIsUpdating(true);
 
-    try {
-        contentUpdateInProgress.current = true;
-        setIsUpdating(true);
+            if (actualIsDraftMode) {
+                // ✅ FINAL SAFETY CHECK: Take a snapshot of the ID right now
+                const currentId = activeDraftIdRef.current;
+                
+                // If it was wiped by handleDiscardDraft while we were waiting, exit.
+                if (!currentId) return; 
 
-        if (actualIsDraftMode && activeDraftIdRef.current) {
-            await updateDraft({ 
-                draftId: activeDraftIdRef.current as Id<"draftDocuments">, 
-                content 
-            });
-        } else {
-            await updateContent({ id: documentId as Id<"documents">, content });
+                await updateDraft({ 
+                    draftId: currentId as Id<"draftDocuments">, 
+                    content 
+                });
+            } else if (!shouldLockEditor) {
+                await updateContent({ id: documentId as Id<"documents">, content });
+            }
+        } catch (error: any) {
+            // ✅ THE SILENCER: Catch race conditions gracefully
+            const errorMessage = error.message || "";
+            if (errorMessage.includes("Draft not found") || discardInProgress.current) {
+                console.log("Cleanup: Ignoring ghost save to deleted draft.");
+                return; 
+            }
+            console.error(error);
+        } finally {
+            setTimeout(() => setIsUpdating(false), 500);
+            contentUpdateInProgress.current = false;
         }
-    } catch (error: any) {
-        // 3. SILENCE THE ERROR: If the draft was just deleted, ignore this specific error
-        if (error.message?.includes("Draft not found")) {
-            return; 
-        }
-        console.error(error);
-    } finally {
-        setIsUpdating(true); // Keep UI in "updating" state briefly to prevent flicker
-        setTimeout(() => setIsUpdating(false), 500);
-        contentUpdateInProgress.current = false;
-    }
-}, [documentId, actualIsDraftMode, updateContent, updateDraft])
-
+    }, [documentId, actualIsDraftMode, shouldLockEditor, updateContent, updateDraft]);
+    
     // const handleContentUpdate = useCallback(async (content: string) => {
     //     if (discardInProgress.current || !activeDraft?._id) return; // EXTRA GUARD
     //     if (!documentId || isUpdating || !initialLoadDone.current) return;
