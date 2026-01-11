@@ -25,10 +25,9 @@ import { useLiveblocksExtension } from "@liveblocks/react-tiptap";
 import { Threads } from './threads'
 import { useStorage } from '@liveblocks/react'
 import { LEFT_MARGIN_DEFAULT, RIGHT_MARGIN_DEFAULT } from '@/constants/margin'
-import { useMutation, useQuery } from 'convex/react'
+import { useMutation, useQuery, useConvex } from 'convex/react' // ← Added useConvex
 import { api } from '../../../../convex/_generated/api'
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { useDebounce } from 'use-debounce'
 import { cn } from '@/lib/utils'
 import { Id } from '../../../../convex/_generated/dataModel'
 import { Loader2, EyeOff, Clock, Upload, X } from 'lucide-react'
@@ -46,6 +45,8 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
     const [localContent, setLocalContent] = useState<string | undefined>(initialContent);
     const [showDraftBanner, setShowDraftBanner] = useState(isDraftMode);
     const initialLoadDone = useRef(false);
+    const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const convexClient = useConvex(); // ← Added convex client
     
     const leftMargin = useStorage((root) => root.leftMargin) ?? LEFT_MARGIN_DEFAULT;
     const rightMargin = useStorage((root) => root.rightMargin) ?? RIGHT_MARGIN_DEFAULT;
@@ -60,10 +61,25 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
         documentId: documentId as Id<"documents">,
     });
 
-    // Get room info to check for other user drafts
-    const roomInfo = useQuery(api.documents.getDocumentRoomInfo, {
-        id: documentId as Id<"documents">,
-    });
+    // ✅ FIXED: Only fetch room info once on mount
+    const [roomInfo, setRoomInfo] = useState<any>(null);
+    
+    useEffect(() => {
+        if (!documentId) return;
+        
+        const fetchRoomInfo = async () => {
+            try {
+                const result = await convexClient.query(api.documents.getDocumentRoomInfo, {
+                    id: documentId as Id<"documents">,
+                });
+                setRoomInfo(result);
+            } catch (error) {
+                console.error("Failed to fetch room info:", error);
+            }
+        };
+        
+        fetchRoomInfo();
+    }, [documentId, convexClient]);
     
     const updateContent = useMutation(api.documents.updateContent);
     const updateDraft = useMutation(api.drafts.updateDraft);
@@ -82,9 +98,7 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
                              documentWithDraft?.isInDraftMode || 
                              isDraftMode;
 
-    // Debounce content updates
-    const [debouncedContent] = useDebounce(localContent, 1000);
-
+    
     // Handle content updates
     const handleContentUpdate = useCallback(async (content: string) => {
         if (!documentId || isUpdating || !initialLoadDone.current) return;
@@ -129,14 +143,29 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
         }
     }, [documentId, actualIsDraftMode, activeDraft, updateContent, updateDraft, getOrCreateDraft, isUpdating]);
 
-    // Sync debounced content to backend
-    useEffect(() => {
-        if (debouncedContent !== undefined && 
-            debouncedContent !== currentContent && 
-            initialLoadDone.current) {
-            handleContentUpdate(debouncedContent);
+    // ✅ CREATE DEBOUNCED SAVE FUNCTION (3 seconds)
+    const debouncedSave = useCallback((content: string) => {
+        // Clear any existing timeout
+        if (saveTimeoutRef.current) {
+            clearTimeout(saveTimeoutRef.current);
         }
-    }, [debouncedContent, currentContent, handleContentUpdate]);
+        
+        // Set new timeout for 3 seconds after typing stops
+        saveTimeoutRef.current = setTimeout(() => {
+            if (initialLoadDone.current && !isUpdating && content !== currentContent) {
+                handleContentUpdate(content);
+            }
+        }, 3000); // 3 seconds delay
+    }, [handleContentUpdate, isUpdating, currentContent]);
+
+    // ✅ CLEANUP TIMEOUT ON UNMOUNT
+    useEffect(() => {
+        return () => {
+            if (saveTimeoutRef.current) {
+                clearTimeout(saveTimeoutRef.current);
+            }
+        };
+    }, []);
 
     // Mark initial load as done
     useEffect(() => {
@@ -151,7 +180,6 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
     const liveblocks = useLiveblocksExtension({
         initialContent: currentContent,
         offlineSupport_experimental: true,
-        // Remove invalid properties and use valid clientOptions
     });
 
     const { setEditor } = useEditorStore();
@@ -169,6 +197,8 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
             setEditor(editor);
             const content = editor.getHTML();
             setLocalContent(content);
+            // ✅ CALL DEBOUNCED SAVE HERE (3-second delay)
+            debouncedSave(content);
         },
         onSelectionUpdate({ editor }) {
             setEditor(editor);
@@ -181,6 +211,13 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
         },
         onBlur({ editor }) {
             setEditor(editor);
+            // ✅ SAVE IMMEDIATELY ON BLUR
+            if (saveTimeoutRef.current) {
+                clearTimeout(saveTimeoutRef.current);
+            }
+            if (localContent && localContent !== currentContent && initialLoadDone.current) {
+                handleContentUpdate(localContent);
+            }
         },
         onContentError({ editor }) {
             setEditor(editor);
@@ -192,7 +229,8 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
                     "focus:outline-none print:border-0 bg-white border border-[#C7C7C7] flex flex-col min-h-[1054px] w-[816px] pt-10 pr-14 pb-10 cursor-text",
                     actualIsDraftMode && 'border-l-4 border-l-amber-400',
                     // Read-only styling when another user has a draft
-                    roomInfo?.hasOtherUserDraft && !actualIsDraftMode && 'bg-gray-50 cursor-not-allowed'
+                    // FIX: Use hasOtherUserDraft from documentWithDraft instead of roomInfo
+                    (roomInfo?.hasOtherUserDraft && !actualIsDraftMode) && 'bg-gray-50 cursor-not-allowed'
                 )
             },
         },
@@ -318,55 +356,8 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
 
     return (
         <div className="size-full overflow-x-auto bg-[#F9FBFD] px-4 print:p-0 print:bg-white print:overflow-visible relative">
-            {/* Draft Mode Banner
-            {showDraftBanner && actualIsDraftMode && (
-                <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
-                    <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg shadow-lg">
-                        <div className="flex items-center gap-2">
-                            <Badge 
-                                variant="outline" 
-                                className="bg-amber-500 text-white border-amber-600"
-                            >
-                                <EyeOff className="h-3 w-3 mr-1" />
-                                DRAFT
-                            </Badge>
-                            <div className="text-sm text-amber-800">
-                                <span className="font-medium">Editing privately</span>
-                                {timeLeft && (
-                                    <div className="flex items-center gap-1 text-xs text-amber-600">
-                                        <Clock className="h-3 w-3" />
-                                        <span>Expires in {timeLeft}</span>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                        <div className="flex gap-2">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={handleDiscardDraft}
-                                disabled={isUpdating}
-                                className="h-8 border-gray-300"
-                            >
-                                <X className="h-3 w-3 mr-1" />
-                                Discard
-                            </Button>
-                            <Button
-                                size="sm"
-                                onClick={handlePublishDraft}
-                                disabled={isUpdating}
-                                className="h-8 bg-green-600 hover:bg-green-700"
-                            >
-                                <Upload className="h-3 w-3 mr-1" />
-                                {isUpdating ? 'Publishing...' : 'Publish'}
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )} */}
-
             {/* Document Locked Banner */}
-            {roomInfo?.hasOtherUserDraft && !actualIsDraftMode && (
+            {(roomInfo?.hasOtherUserDraft && !actualIsDraftMode) && (
                 <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
                     <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg shadow-lg">
                         <div className="flex items-center gap-2">
