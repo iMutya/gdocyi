@@ -27,35 +27,28 @@ export const DocumentInput = ({ title, id, isDraftMode = false, draftExpiresAt }
     const inputRef = useRef<HTMLInputElement>(null);
     const mutate = useMutation(api.documents.updateById);
 
-    // Update local value when title prop changes
     useEffect(() => {
         if (!isEditing) {
             setValue(title);
         }
     }, [title, isEditing]);
 
-    // Simulate connection status
     useEffect(() => {
         if (isDraftMode) {
-            // In draft mode, show as connected immediately
             setConnectionState("connected");
             return;
         }
         
-        // For non-draft mode, simulate connection process
         setConnectionState("connecting");
         
         const timer = setTimeout(() => {
             setConnectionState("connected");
         }, 1000);
         
-        // You could add error simulation here
         const errorTimer = setTimeout(() => {
-            // Simulate occasional disconnections
             if (Math.random() > 0.9) {
                 setConnectionState("disconnected");
                 
-                // Auto-reconnect after 3 seconds
                 setTimeout(() => {
                     setConnectionState("connected");
                 }, 3000);
@@ -128,7 +121,6 @@ export const DocumentInput = ({ title, id, isDraftMode = false, draftExpiresAt }
         }
     };
 
-    // Calculate time left for draft
     const getTimeLeft = () => {
         if (!isDraftMode || !draftExpiresAt) return null;
         
@@ -143,7 +135,6 @@ export const DocumentInput = ({ title, id, isDraftMode = false, draftExpiresAt }
         return "< 1m";
     };
 
-    // Get connection status text based on connectionState
     const getConnectionStatus = () => {
         if (isDraftMode) {
             return {
@@ -191,7 +182,6 @@ export const DocumentInput = ({ title, id, isDraftMode = false, draftExpiresAt }
 
     return (
         <div className="flex items-center gap-2">
-            {/* Document Title Input */}
             <div className="relative">
                 {isEditing ? (
                     <form onSubmit={handleSubmit} className="relative">
@@ -233,13 +223,11 @@ export const DocumentInput = ({ title, id, isDraftMode = false, draftExpiresAt }
             </div>
 
             
-            {/* Connection Status Indicators */}
             <div className="flex items-center gap-1 ml-2">
                 {connectionStatus.showError && <BsCloudSlash className="size-4 text-red-500" />}
                 {connectionStatus.showSuccess && <BsCloudCheck className="size-4 text-green-500" />}
                 {connectionStatus.showLoader && <LoaderIcon className="size-4 animate-spin text-muted-foreground" />}
                 
-                {/* Status Text */}
                 <span className={cn(
                     "text-xs",
                     connectionStatus.showError ? "text-red-600" : 

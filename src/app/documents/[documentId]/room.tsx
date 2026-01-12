@@ -74,7 +74,6 @@ export function Room({ children }: { children: ReactNode }) {
           }));
         }}
     >
-      {/* ALWAYS render RoomProvider, even for drafts */}
       <RoomProvider 
         id={documentId} 
         initialPresence={{}}

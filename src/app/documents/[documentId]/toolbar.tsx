@@ -53,7 +53,6 @@ import { toast } from "sonner";
 import { useUser } from "@clerk/nextjs";
 import { formatDistanceToNow } from "date-fns";
 
-// Add props interface for draft mode
 interface ToolbarProps {
     isDraftMode?: boolean;
     documentId?: Id<"documents">;
@@ -64,13 +63,15 @@ const DraftControls = ({ documentId, isDraftMode }: { documentId?: Id<"documents
     const [isLoading, setIsLoading] = useState(false);
     const { editor } = useEditorStore();
 
-    // Get the main document to know what to revert to
     const document = useQuery(api.documents.getById, documentId ? { id: documentId } : "skip");
     
     const activeDraft = useQuery(api.drafts.getActiveDraft, 
         documentId ? { documentId } : "skip"
     );
     
+    const updateContent = useMutation(api.documents.updateContent);
+    const updateDraft = useMutation(api.drafts.updateDraft);
+
     const getOrCreateDraft = useMutation(api.drafts.getOrCreateDraft);
     const publishDraft = useMutation(api.drafts.publishDraft);
     const discardDraft = useMutation(api.drafts.discardDraft);
@@ -85,20 +86,34 @@ const DraftControls = ({ documentId, isDraftMode }: { documentId?: Id<"documents
         if (minutes > 0) return `${minutes}m`;
         return "< 1m";
     };
-
     const handleEnterDraftMode = useCallback(async () => {
         if (!documentId) return;
         setIsLoading(true);
+        
         try {
-            await getOrCreateDraft({ documentId });
+            const currentContent = editor?.getHTML() || ""; 
+
+            await updateContent({ 
+                 id: documentId, 
+                 content: currentContent 
+            });
+
+            const draftId = await getOrCreateDraft({ documentId });
+
+            await updateDraft({
+                draftId,
+                content: currentContent
+            })
+            
             toast.success("Draft mode activated");
+
         } catch (error) {
             console.error("Failed to enter draft mode:", error);
             toast.error("Failed to enter draft mode");
         } finally {
             setIsLoading(false);
         }
-    }, [documentId, getOrCreateDraft]);
+    }, [documentId, getOrCreateDraft, updateContent, updateDraft, editor]);
 
     const handlePublishDraft = useCallback(async () => {
         if (!activeDraft?._id) return;
@@ -118,19 +133,18 @@ const DraftControls = ({ documentId, isDraftMode }: { documentId?: Id<"documents
         if (!activeDraft?._id) return;
         if (!confirm("Discard this draft?")) return;
 
-        // Get the global lock from the store
         const { setIsDiscarding } = useEditorStore.getState();
 
         setIsLoading(true);
         try {
-            // 1. ACTIVATE GLOBAL LOCK (Mutes the Editor)
             setIsDiscarding(true);
 
             await discardDraft({ draftId: activeDraft._id });
 
-            if (editor) {
-                const revertTo = document?.publishedContent || "";
-                editor.commands.setContent(revertTo, false);
+            if (editor && document) {
+                editor.commands.clearContent();
+                
+                editor.commands.setContent(document.initialContent || "", false);
             }
             toast.success("Draft discarded");
         } catch (error) {
@@ -138,11 +152,9 @@ const DraftControls = ({ documentId, isDraftMode }: { documentId?: Id<"documents
             setIsDiscarding(false); 
         } finally {
             setIsLoading(false);
-            // 2. KEEP LOCKED FOR 1.5s (Allows Convex queries to refresh)
             setTimeout(() => setIsDiscarding(false), 1500);
         }
     }, [activeDraft, discardDraft, editor, document]);
-
 
     const timeLeft = getTimeLeft();
     const actualIsDraftMode = isDraftMode || !!activeDraft;
@@ -214,12 +226,10 @@ const DraftControls = ({ documentId, isDraftMode }: { documentId?: Id<"documents
     );
 };
 
-//end
 const ViewAllDraftsButton = ({ documentId }: { documentId?: Id<"documents"> }) => {
     const [isOpen, setIsOpen] = useState(false);
     const { user } = useUser();
     
-    // Get data - documentId should be Id<"documents">
     const allDrafts = useQuery(api.drafts.getAllDocumentDrafts, 
         documentId ? { documentId } : "skip"
     );
@@ -232,19 +242,16 @@ const ViewAllDraftsButton = ({ documentId }: { documentId?: Id<"documents"> }) =
         documentId ? { documentId } : "skip"
     );
 
-    // Mutations
     const createDraftMutation = useMutation(api.drafts.getOrCreateDraft);
     const publishDraftMutation = useMutation(api.drafts.publishDraft);
     const mergeAnyDraftMutation = useMutation(api.drafts.mergeAnyDraft);
     const discardDraftMutation = useMutation(api.drafts.discardDraft);
     
-    // Compare data
     const [compareDraftId, setCompareDraftId] = useState<string | null>(null);
     const compareData = useQuery(api.drafts.compareDraftWithMain, 
         compareDraftId ? { draftId: compareDraftId as Id<"draftDocuments"> } : "skip"
     );
 
-    // Handlers
     const handleCreateDraft = async () => {
         if (!documentId) return;
         try {
@@ -281,7 +288,6 @@ const ViewAllDraftsButton = ({ documentId }: { documentId?: Id<"documents"> }) =
         }
     };
 
-    // Get other users' drafts count
     const otherDraftsCount = allDrafts?.filter(d => d.ownerId !== user?.id).length || 0;
     
     return (
@@ -299,11 +305,9 @@ const ViewAllDraftsButton = ({ documentId }: { documentId?: Id<"documents"> }) =
                 )}
             </button>
 
-            {/* FULL DRAFTS MODAL (like DraftsSidebar) */}
             {isOpen && documentId && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-                        {/* Header */}
                         <div className="p-4 border-b">
                             <div className="flex justify-between items-center mb-2">
                                 <h2 className="font-semibold text-gray-800 text-lg">📝 All Drafts</h2>
@@ -319,9 +323,7 @@ const ViewAllDraftsButton = ({ documentId }: { documentId?: Id<"documents"> }) =
                             </p>
                         </div>
 
-                        {/* Main Content */}
                         <div className="flex-1 overflow-y-auto p-4">
-                            {/* My Draft Section */}
                             <div className="mb-6">
                                 <h3 className="text-sm font-medium text-gray-700 mb-2">My Draft</h3>
                                 {myDraft ? (
@@ -370,7 +372,6 @@ const ViewAllDraftsButton = ({ documentId }: { documentId?: Id<"documents"> }) =
                                 )}
                             </div>
 
-                            {/* Others' Drafts Section */}
                             {otherDrafts && otherDrafts.length > 0 && (
                                 <div>
                                     <h3 className="text-sm font-medium text-gray-700 mb-2">
@@ -418,7 +419,6 @@ const ViewAllDraftsButton = ({ documentId }: { documentId?: Id<"documents"> }) =
                                 </div>
                             )}
 
-                            {/* No other drafts message */}
                             {otherDrafts && otherDrafts.length === 0 && allDrafts && allDrafts.length > 0 && (
                                 <div className="text-center py-8 text-gray-500">
                                     <div className="text-2xl mb-2">👥</div>
@@ -427,7 +427,6 @@ const ViewAllDraftsButton = ({ documentId }: { documentId?: Id<"documents"> }) =
                             )}
                         </div>
 
-                        {/* Compare Modal (nested) */}
                         {compareDraftId && compareData && (
                             <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4">
                                 <div className="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[85vh] overflow-hidden">
@@ -986,6 +985,11 @@ interface ToolbarButtonProps {
     icon: LucideIcon;
 };
 
+interface ToolbarProps {
+    isDraftMode?: boolean;
+    documentId?: Id<"documents">;
+}
+
 const ToolbarButton = ({
     onClick,
     isActive,
@@ -1091,7 +1095,6 @@ export const Toolbar = ({ isDraftMode = false, documentId }: ToolbarProps) => {
         ],
     ];
 
-    // Add draft mode styling to toolbar
     const toolbarClasses = cn(
         "bg-[#F1F4F9] px-2.5 py-0.5 rounded-[24px] min-h-[40px] flex items-center gap-x-0.5 overflow-x-auto",
         isDraftMode && "border border-amber-300 bg-amber-50/50"
@@ -1099,14 +1102,12 @@ export const Toolbar = ({ isDraftMode = false, documentId }: ToolbarProps) => {
 
     return(
         <div className={toolbarClasses}>
-            {/* Draft Controls Section */}
             <DraftControls 
                 documentId={documentId} 
                 isDraftMode={isDraftMode} 
             />
             
-            {/*  */}
-            {/* ADD THIS: View All Drafts Button */}
+            
             {documentId && (
                 <>
                     <Separator orientation="vertical" className="h-6 bg-neutral-300"/>

@@ -18,7 +18,6 @@ const DocumentIdPage = async ({ params }: DocumentIdPageProps) => {
     throw new Error("Unauthorized");
   }
 
-  // Preload the document with draft status
   const preloadedDocument = await preloadQuery(
     api.documents.getWithDraft,
     { id: documentId },

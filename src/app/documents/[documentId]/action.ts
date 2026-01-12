@@ -36,6 +36,7 @@ export async function getUsers() {
         organizationId:[orgId], // if indi mag gana ang sa babaw
     });
     
+    
 
     const users = response.data.map((user) => {
         const name =
@@ -43,7 +44,7 @@ export async function getUsers() {
             [user.firstName, user.lastName].filter(Boolean).join(" ") ||
             user.primaryEmailAddress?.emailAddress ||
             "Anonymous";
-            // clerk does not populate fullname unless you set it
+            // ang clerk wala gapopulate sang fullname unless iset mo gid sa 
 
         return {
             id: user.id,

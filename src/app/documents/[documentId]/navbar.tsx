@@ -36,10 +36,10 @@ import {
 } from "lucide-react";
 import { BsFilePdf } from "react-icons/bs";
 import { useEditorStore } from "@/store/use-editor-store";
-import { OrganizationSwitcher, UserButton, useUser } from "@clerk/nextjs"; // ADD useUser
+import { OrganizationSwitcher, UserButton, useUser } from "@clerk/nextjs";
 import { Inbox } from "./inbox";
 import { Doc } from "../../../../convex/_generated/dataModel";
-import { useMutation, useQuery } from "convex/react"; // ADD useQuery
+import { useMutation, useQuery } from "convex/react"; 
 import { api } from "../../../../convex/_generated/api";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -55,7 +55,6 @@ interface NavbarProps {
     };
     onToggleDrafts?: () => void;
     showDraftsSidebar?: boolean;
-    // ADD: Pass draft data if available
     allDraftsCount?: number;
 }
 
@@ -63,20 +62,18 @@ export const Navbar = ({
     data, 
     onToggleDrafts, 
     showDraftsSidebar = true,
-    allDraftsCount = 0 // ADD this prop
+    allDraftsCount = 0 
 }: NavbarProps) => {
     const router = useRouter();
     const { editor } = useEditorStore();
-    const { user } = useUser(); // ADD user
+    const { user } = useUser();
 
     const mutation = useMutation(api.documents.create);
     
-    // OPTIONAL: Fetch drafts here if not passed as prop
     const allDrafts = useQuery(api.drafts.getAllDocumentDrafts, 
         { documentId: data._id }
     );
     
-    // Use passed count or calculate locally
     const draftCount = allDraftsCount > 0 ? allDraftsCount : (allDrafts?.length || 0);
 
     const onNewDocument = () => {
@@ -291,20 +288,6 @@ export const Navbar = ({
                 </div>
             </div>
             <div className="flex gap-3 items-center pl-6">
-                {/* ADD YOUR EXACT BUTTON HERE */}
-                {/* {onToggleDrafts && (
-                    <button
-                        onClick={onToggleDrafts}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg text-sm font-medium transition-colors"
-                    >
-                        <span>📋</span>
-                        <span>
-                            {showDraftsSidebar ? "Hide" : "Show"} Drafts 
-                            {draftCount > 0 && ` (${draftCount})`}
-                        </span>
-                    </button>
-                )}
-                 */}
                 <Avatars />
                 <Inbox />
                 <OrganizationSwitcher
