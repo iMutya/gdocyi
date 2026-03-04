@@ -52,7 +52,6 @@ export const Editor = ({ documentId, initialContent, isDraftMode = false }: Edit
     const convexClient = useConvex();
 
     const initialDraftSaveDone = useRef(false);
-    const [editorKey, setEditorKey] = useState(0);
     
     
     const forceUpdateEditor = useRef(false);
@@ -231,6 +230,7 @@ const handleContentUpdate = useCallback(async (content: string) => {
         if (actualIsDraftMode && editor && !initialDraftSaveDone.current && activeDraft?._id) {
             const currentContent = editor.getHTML();
 
+            // 
             updateDraft({ 
                 draftId: activeDraft._id, 
                 content: currentContent 
